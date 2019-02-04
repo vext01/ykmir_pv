@@ -1,0 +1,10 @@
+[package]
+name = "ykmir"
+version = "0.1.0"
+authors = ["Edd Barrett <vext01@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+serde = "1.0"
+rmp-serde = "0.13"
+serde_derive = "1.0"
