@@ -172,22 +172,8 @@ mod tests {
         curs.seek(SeekFrom::Start(0)).unwrap();
     }
 
-    // Check serialising and deserialising works for zero MIRs.
-    #[test]
-    fn test_empty() {
-        let mut curs = get_curs();
-
-        let enc = Encoder::from(&mut curs).unwrap();
-        enc.done().unwrap();
-
-        rewind_curs(&mut curs);
-        let dec = Decoder::new(&mut curs).unwrap();
-        assert!(dec.iter().next().unwrap().is_none());
-    }
-
-    // Check a typical serialising and deserialising session.
-    #[test]
-    fn test_basic() {
+    // Makes some sample stuff to round trip test.
+    fn make_sample_metadata() -> Vec<MetaData> {
         let dummy_term = Terminator::Abort;
 
         let stmts1_b1 = vec![Statement::Nop; 16];
@@ -208,24 +194,45 @@ mod tests {
         ];
         let mir2 = MetaData::Mir(Mir::new(DefId::new(4, 5), blocks2));
 
+        vec![mir1, mir2]
+    }
+
+    // Check serialising and deserialising works for zero MIRs.
+    #[test]
+    fn test_empty() {
         let mut curs = get_curs();
 
-        let mut enc = Encoder::from(&mut curs).unwrap();
-        enc.serialise(mir1.clone()).unwrap();
-        enc.serialise(mir2.clone()).unwrap();
+        let enc = Encoder::from(&mut curs).unwrap();
         enc.done().unwrap();
 
         rewind_curs(&mut curs);
-
         let dec = Decoder::new(&mut curs).unwrap();
-        let mut itr = dec.iter();
+        assert!(dec.iter().next().unwrap().is_none());
+    }
 
-        let got_mir1 = itr.next().unwrap();
-        assert_eq!(got_mir1, Some(mir1));
+    // Check a typical serialising and deserialising session.
+    #[test]
+    fn test_basic() {
+        let mut inputs = make_sample_metadata();
+        let mut curs = get_curs();
 
-        let got_mir2 = itr.next().unwrap();
-        assert_eq!(got_mir2, Some(mir2));
+        let mut enc = Encoder::from(&mut curs).unwrap();
+        for md in &inputs {
+            enc.serialise(md.clone()).unwrap();
+        }
+        enc.done().unwrap();
 
-        assert!(itr.next().unwrap().is_none());
+        rewind_curs(&mut curs);
+        let dec = Decoder::new(&mut curs).unwrap();
+
+        // Sadly we cant zip a regular iterator with a fallible iterator.
+        let len = inputs.len();
+        let mut expect_itr = inputs.drain(..);
+        let mut got_itr = dec.iter();
+        for _ in 0..len {
+            assert_eq!(expect_itr.next(), got_itr.next().unwrap());
+        }
+        assert!(expect_itr.next().is_none());
+        assert!(got_itr.next().unwrap().is_none());
     }
 }
