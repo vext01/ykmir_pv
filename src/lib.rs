@@ -157,6 +157,7 @@ pub enum MetaData {
 #[cfg(test)]
 mod tests {
     use super::{BasicBlock, Decoder, DefId, Encoder, Mir, Statement, Terminator, MetaData};
+    use fallible_iterator::FallibleIterator;
     use std::io::{Cursor, Seek, SeekFrom};
 
     // Get a cursor to serialise to and deserialise from. For real, we'd be reading from a file,
@@ -181,7 +182,7 @@ mod tests {
 
         rewind_curs(&mut curs);
         let dec = Decoder::new(&mut curs).unwrap();
-        assert!(dec.iter().next().is_none());
+        assert!(dec.iter().next().unwrap().is_none());
     }
 
     // Check a typical serialising and deserialising session.
@@ -220,13 +221,11 @@ mod tests {
         let mut itr = dec.iter();
 
         let got_mir1 = itr.next().unwrap();
-        println!("HI");
-        assert_eq!(got_mir1, mir1);
+        assert_eq!(got_mir1, Some(mir1));
 
         let got_mir2 = itr.next().unwrap();
-        assert_eq!(got_mir2, mir2);
-        assert_eq!(got_mir1, mir1);
+        assert_eq!(got_mir2, Some(mir2));
 
-        assert!(itr.next().is_none());
+        assert!(itr.next().unwrap().is_none());
     }
 }

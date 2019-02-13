@@ -14,7 +14,8 @@ use rmp_serde::{
 };
 use serde::Deserialize;
 use std::io::Read;
-use std::iter::Iterator; //{IntoIter, Iterator};
+//use std::iter::Iterator; //{IntoIter, Iterator};
+use fallible_iterator::FallibleIterator;
 
 /// A decoder.
 pub struct Decoder<'a> {
@@ -42,13 +43,11 @@ pub struct MetaDataIterator<'a> {
     deser: Deserializer<ReadReader<&'a mut dyn Read>>,
 }
 
-impl<'a> Iterator for MetaDataIterator<'a> {
+impl<'a> FallibleIterator for MetaDataIterator<'a> {
     type Item = MetaData;
+    type Error = decode::Error;
 
-    fn next(&mut self) -> Option<MetaData> { //Option<Self::Item> {
-        //Option::<MetaData>::deserialize(&mut self.deser).unwrap()
-        let f = Option::<MetaData>::deserialize(&mut self.deser);
-        eprintln!("{:?}", f);
-        f.unwrap()
+    fn next(&mut self) -> Result<Option<Self::Item>, Self::Error> {
+        Option::<MetaData>::deserialize(&mut self.deser)
     }
 }
