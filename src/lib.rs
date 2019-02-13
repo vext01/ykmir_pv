@@ -157,7 +157,7 @@ pub enum MetaData {
 #[cfg(test)]
 mod tests {
     use super::{BasicBlock, Decoder, DefId, Encoder, Mir, Statement, Terminator, MetaData};
-    use fallible_iterator::FallibleIterator;
+    use fallible_iterator::{self, FallibleIterator};
     use std::io::{Cursor, Seek, SeekFrom};
 
     // Get a cursor to serialise to and deserialise from. For real, we'd be reading from a file,
@@ -213,7 +213,7 @@ mod tests {
     // Check a typical serialising and deserialising session.
     #[test]
     fn test_basic() {
-        let mut inputs = make_sample_metadata();
+        let inputs = make_sample_metadata();
         let mut curs = get_curs();
 
         let mut enc = Encoder::from(&mut curs).unwrap();
@@ -225,14 +225,13 @@ mod tests {
         rewind_curs(&mut curs);
         let dec = Decoder::new(&mut curs).unwrap();
 
-        // Sadly we cant zip a regular iterator with a fallible iterator.
-        let len = inputs.len();
-        let mut expect_itr = inputs.drain(..);
-        let mut got_itr = dec.iter();
-        for _ in 0..len {
-            assert_eq!(expect_itr.next(), got_itr.next().unwrap());
+        // Obtain two fallible iterators, so we can zip them.
+        let got_iter = dec.iter();
+        let expect_iter = fallible_iterator::convert(inputs.into_iter().map(|e| Ok(e)));
+
+        let mut itr = got_iter.zip(expect_iter);
+        while let Some((got, expect)) = itr.next().unwrap() {
+            assert_eq!(expect, got);
         }
-        assert!(expect_itr.next().is_none());
-        assert!(got_itr.next().unwrap().is_none());
     }
 }
