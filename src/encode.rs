@@ -7,49 +7,42 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use crate::{Expect, Index, Mir, FORMAT_VERSION};
+use crate::{SER_VERSION, MetaData};
 use rmp_serde::{
-    encode::{self, StructArrayWriter},
+    encode::{self},
     Serializer,
 };
 use serde::Serialize;
-use std::{io::prelude::*, ops::Drop};
+use std::io::prelude::*;
 
 /// The encoder.
 pub struct Encoder<'a> {
-    ser: Serializer<&'a mut dyn Write, StructArrayWriter>,
-    // A copy of the initial index which is mutated to keep track of what's left to serialize.
-    state: Index,
+    ser: Serializer<&'a mut dyn Write>,
 }
 
 impl<'a> Encoder<'a> {
     /// Creates a new encoder which will serialise into `write_into`. The `index` informs the
     /// encoder what to expect to encode. The user must encode exactly as many data structures as
     /// what is outlined in the index, or the encoder will panic.
-    pub fn new(write_into: &'a mut dyn Write, index: Index) -> Result<Self, encode::Error> {
+    pub fn from(write_into: &'a mut dyn Write) -> Result<Self, encode::Error> {
         let mut ser = Serializer::new(write_into);
-        FORMAT_VERSION.serialize(&mut ser)?;
-        index.serialize(&mut ser)?;
-        Ok(Self { ser, state: index })
+        SER_VERSION.serialize(&mut ser)?;
+        Ok(Self { ser })
     }
 
     /// Serialises one MIR's worth of data.
-    pub fn write_mir(&mut self, mir: Mir) -> Result<(), encode::Error> {
-        if self.state.expect_next() != Expect::Mir {
-            panic!("Tried to encode a MIR at the wrong position");
-        }
-
-        mir.serialize(&mut self.ser)?;
+    pub fn serialise(&mut self, md: MetaData) -> Result<(), encode::Error> {
+        let to_ser: Option<MetaData> = Some(md);
+        //Some(md).serialize(&mut self.ser)?;
+        println!("encoding: {:?}", to_ser);
+        to_ser.serialize(&mut self.ser)?;
         Ok(())
     }
-}
 
-/// Drop implementation prevents partial encodings from going unnoticed.
-/// E.g. We wrote an index saying there'd be 10 MIRs, but the encoder was dropped after 9.
-impl<'a> Drop for Encoder<'a> {
-    fn drop(&mut self) {
-        if self.state.expect_next() != Expect::NoMore {
-            panic!("MIR decoder dropped before all expected data serialised");
-        }
+    /// Finalises an encoding session.
+    pub fn done(mut self) -> Result<(), encode::Error> {
+        let to_ser: Option<MetaData> = None;
+        to_ser.serialize(&mut self.ser)?;
+        Ok(())
     }
 }

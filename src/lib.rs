@@ -40,7 +40,7 @@ pub use decode::Decoder;
 pub use encode::Encoder;
 
 /// The version number of the data structures.
-const FORMAT_VERSION: usize = 0;
+const SER_VERSION: usize = 0;
 
 pub type CrateHash = u64;
 pub type DefIndex = u32;
@@ -58,43 +58,6 @@ impl DefId {
         Self {
             crate_hash,
             def_idx,
-        }
-    }
-}
-
-// A type used to communicate what we expect to encode/decode next.
-#[derive(PartialEq, Eq, Debug)]
-enum Expect {
-    Mir,
-    NoMore,
-}
-
-/// The "index" is a table describing the contents of some serialised data.
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-pub struct Index {
-    /// The number of MIR entries.
-    num_mirs: usize,
-}
-
-impl Index {
-    /// Create a new index.
-    pub fn new(num_mirs: usize) -> Self {
-        Self { num_mirs }
-    }
-
-    /// Return the number of MIR entries.
-    pub fn num_mirs(&self) -> usize {
-        self.num_mirs
-    }
-
-    // Report what kind of record we expect to encode/decode next and update the index.
-    // Used only internally by encoders/decoders.
-    fn expect_next(&mut self) -> Expect {
-        if self.num_mirs > 0 {
-            self.num_mirs -= 1;
-            Expect::Mir
-        } else {
-            Expect::NoMore
         }
     }
 }
@@ -185,9 +148,15 @@ pub enum Terminator {
     },
 }
 
+/// The top-level meta-data type.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum MetaData {
+    Mir(Mir),
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{BasicBlock, Decoder, DefId, Encoder, Index, Mir, Statement, Terminator};
+    use super::{BasicBlock, Decoder, DefId, Encoder, Mir, Statement, Terminator, MetaData};
     use std::io::{Cursor, Seek, SeekFrom};
 
     // Get a cursor to serialise to and deserialise from. For real, we'd be reading from a file,
@@ -207,12 +176,12 @@ mod tests {
     fn test_empty() {
         let mut curs = get_curs();
 
-        let index = Index::new(0);
-        Encoder::new(&mut curs, index.clone()).unwrap();
+        let enc = Encoder::from(&mut curs).unwrap();
+        enc.done().unwrap();
 
         rewind_curs(&mut curs);
-        let (got_index, _) = Decoder::new(&mut curs).unwrap();
-        assert_eq!(got_index, index);
+        let dec = Decoder::new(&mut curs).unwrap();
+        assert!(dec.iter().next().is_none());
     }
 
     // Check a typical serialising and deserialising session.
@@ -226,7 +195,7 @@ mod tests {
             BasicBlock::new(stmts1_b1, dummy_term.clone()),
             BasicBlock::new(stmts1_b2, dummy_term.clone()),
         ];
-        let mir1 = Mir::new(DefId::new(1, 2), blocks1);
+        let mir1 = MetaData::Mir(Mir::new(DefId::new(1, 2), blocks1));
 
         let stmts2_b1 = vec![Statement::Nop; 7];
         let stmts2_b2 = vec![Statement::Nop; 200];
@@ -236,49 +205,28 @@ mod tests {
             BasicBlock::new(stmts2_b2, dummy_term.clone()),
             BasicBlock::new(stmts2_b3, dummy_term.clone()),
         ];
-        let mir2 = Mir::new(DefId::new(4, 5), blocks2);
+        let mir2 = MetaData::Mir(Mir::new(DefId::new(4, 5), blocks2));
 
-        let index = Index::new(2);
         let mut curs = get_curs();
 
-        {
-            let mut enc = Encoder::new(&mut curs, index.clone()).unwrap();
-            enc.write_mir(mir1.clone()).unwrap();
-            enc.write_mir(mir2.clone()).unwrap();
-        }
+        let mut enc = Encoder::from(&mut curs).unwrap();
+        enc.serialise(mir1.clone()).unwrap();
+        enc.serialise(mir2.clone()).unwrap();
+        enc.done().unwrap();
+
         rewind_curs(&mut curs);
 
-        let (got_index, mut dec) = Decoder::new(&mut curs).unwrap();
-        assert_eq!(got_index, index);
+        let dec = Decoder::new(&mut curs).unwrap();
+        let mut itr = dec.iter();
 
-        let got_mir1 = dec.read_mir().unwrap();
+        let got_mir1 = itr.next().unwrap();
+        println!("HI");
         assert_eq!(got_mir1, mir1);
 
-        let got_mir2 = dec.read_mir().unwrap();
+        let got_mir2 = itr.next().unwrap();
         assert_eq!(got_mir2, mir2);
-    }
+        assert_eq!(got_mir1, mir1);
 
-    // Try to decode more MIRs than we said we would.
-    #[test]
-    #[should_panic]
-    fn test_decode_too_many_mirs() {
-        let index = Index::new(2);
-        let mut curs = get_curs();
-
-        let mut enc = Encoder::new(&mut curs, index.clone()).unwrap();
-        let mir = Mir::new(DefId::new(1, 2), Vec::new());
-
-        enc.write_mir(mir.clone()).unwrap();
-        enc.write_mir(mir.clone()).unwrap();
-        enc.write_mir(mir).unwrap(); // panic.
-    }
-
-    // Check that we get a panic if the encoder is still expecting more data to serialise.
-    #[test]
-    #[should_panic]
-    fn test_drop_enc_premature() {
-        let index = Index::new(2);
-        let mut curs = get_curs();
-        Encoder::new(&mut curs, index).unwrap();
+        assert!(itr.next().is_none());
     }
 }

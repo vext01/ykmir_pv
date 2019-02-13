@@ -7,46 +7,48 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use crate::{Expect, Index, Mir, FORMAT_VERSION};
+use crate::{SER_VERSION, MetaData};
 use rmp_serde::{
     decode::{self, ReadReader},
     Deserializer,
 };
 use serde::Deserialize;
 use std::io::Read;
+use std::iter::Iterator; //{IntoIter, Iterator};
 
 /// A decoder.
 pub struct Decoder<'a> {
     deser: Deserializer<ReadReader<&'a mut dyn Read>>,
-    index: Index,
 }
 
 impl<'a> Decoder<'a> {
     /// Returns a new decoder which will deserialise from `read_from` and also an `Index` informing
     /// the consumer of the expected contents.
-    pub fn new(read_from: &'a mut dyn Read) -> Result<(Index, Self), decode::Error> {
+    pub fn new(read_from: &'a mut dyn Read) -> Result<Self, decode::Error> {
         let mut deser = Deserializer::new(read_from);
         let ver = usize::deserialize(&mut deser)?;
-        if ver != FORMAT_VERSION {
+        if ver != SER_VERSION {
             panic!("incorrect version number!");
         }
-
-        let index = Index::deserialize(&mut deser)?;
-        Ok((
-            index.clone(),
-            Self {
-                deser,
-                // The decoder uses a copy of the index to keep track of what comes next.
-                index,
-            },
-        ))
+        Ok(Self { deser })
     }
 
-    /// Deserialize one MIR's worth of data.
-    pub fn read_mir(&mut self) -> Result<Mir, decode::Error> {
-        if self.index.expect_next() != Expect::Mir {
-            panic!("Tried to decode a MIR entry at the wrong position");
-        }
-        Ok(Mir::deserialize(&mut self.deser)?)
+    pub fn iter(self) -> MetaDataIterator<'a> {
+        MetaDataIterator { deser: self.deser }
+    }
+}
+
+pub struct MetaDataIterator<'a> {
+    deser: Deserializer<ReadReader<&'a mut dyn Read>>,
+}
+
+impl<'a> Iterator for MetaDataIterator<'a> {
+    type Item = MetaData;
+
+    fn next(&mut self) -> Option<MetaData> { //Option<Self::Item> {
+        //Option::<MetaData>::deserialize(&mut self.deser).unwrap()
+        let f = Option::<MetaData>::deserialize(&mut self.deser);
+        eprintln!("{:?}", f);
+        f.unwrap()
     }
 }
