@@ -7,42 +7,46 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use crate::{SER_VERSION, MetaData};
-use rmp_serde::{
-    encode::{self},
-    Serializer,
-};
+use crate::{MetaData, SER_VERSION};
+use rmp_serde::{encode, Serializer};
 use serde::Serialize;
-use std::io::prelude::*;
+use std::{io::prelude::*, ops::Drop};
 
-/// The encoder.
+/// The meta-data encoder.
+///
+/// Metadata items are written using the `serialise()` method. Once all desired meta-data is
+/// serialised, the consumer must call `done()`.
 pub struct Encoder<'a> {
     ser: Serializer<&'a mut dyn Write>,
+    done: bool,
 }
 
 impl<'a> Encoder<'a> {
-    /// Creates a new encoder which will serialise into `write_into`. The `index` informs the
-    /// encoder what to expect to encode. The user must encode exactly as many data structures as
-    /// what is outlined in the index, or the encoder will panic.
+    /// Creates a new encoder which serliases `MetaData` into the writable `write_into`.
     pub fn from(write_into: &'a mut dyn Write) -> Result<Self, encode::Error> {
         let mut ser = Serializer::new(write_into);
         SER_VERSION.serialize(&mut ser)?;
-        Ok(Self { ser })
+        Ok(Self { ser, done: false })
     }
 
-    /// Serialises one MIR's worth of data.
+    /// Serialises a meta-data item.
     pub fn serialise(&mut self, md: MetaData) -> Result<(), encode::Error> {
-        let to_ser: Option<MetaData> = Some(md);
-        //Some(md).serialize(&mut self.ser)?;
-        println!("encoding: {:?}", to_ser);
-        to_ser.serialize(&mut self.ser)?;
+        Some(md).serialize(&mut self.ser)?;
         Ok(())
     }
 
-    /// Finalises an encoding session.
+    /// Finalises the serialisation and writes a sentinal.
     pub fn done(mut self) -> Result<(), encode::Error> {
-        let to_ser: Option<MetaData> = None;
-        to_ser.serialize(&mut self.ser)?;
+        None::<Option<MetaData>>.serialize(&mut self.ser)?;
+        self.done = true;
         Ok(())
+    }
+}
+
+impl<'a> Drop for Encoder<'a> {
+    fn drop(&mut self) {
+        if !self.done {
+            panic!("Encoder not marked done()");
+        }
     }
 }

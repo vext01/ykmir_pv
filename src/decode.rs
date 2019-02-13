@@ -7,24 +7,23 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-use crate::{SER_VERSION, MetaData};
+use crate::{MetaData, SER_VERSION};
+use fallible_iterator::FallibleIterator;
 use rmp_serde::{
     decode::{self, ReadReader},
     Deserializer,
 };
 use serde::Deserialize;
 use std::io::Read;
-//use std::iter::Iterator; //{IntoIter, Iterator};
-use fallible_iterator::FallibleIterator;
 
-/// A decoder.
+/// The meta-data decoder.
+/// Offfers a simple iterator interface to serialised meta-data.
 pub struct Decoder<'a> {
     deser: Deserializer<ReadReader<&'a mut dyn Read>>,
 }
 
 impl<'a> Decoder<'a> {
-    /// Returns a new decoder which will deserialise from `read_from` and also an `Index` informing
-    /// the consumer of the expected contents.
+    /// Returns a new decoder which will deserialise from `read_from`.
     pub fn new(read_from: &'a mut dyn Read) -> Result<Self, decode::Error> {
         let mut deser = Deserializer::new(read_from);
         let ver = usize::deserialize(&mut deser)?;
@@ -34,11 +33,14 @@ impl<'a> Decoder<'a> {
         Ok(Self { deser })
     }
 
+    // Iterate over meta-data.
     pub fn iter(self) -> MetaDataIterator<'a> {
         MetaDataIterator { deser: self.deser }
     }
 }
 
+/// A (fallible) meta-data iterator.
+/// Reusing the iterator once is has yielded `None` leads to undefined behaviour.
 pub struct MetaDataIterator<'a> {
     deser: Deserializer<ReadReader<&'a mut dyn Read>>,
 }

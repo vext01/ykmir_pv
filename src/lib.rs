@@ -10,25 +10,26 @@
 /// YkMir -- Metadata serialiser and deserialiser for Yorick.
 ///
 /// This crate allows ykrustc to serialise the compiler's MIR structures for later deserialisation
-/// by the Yorick runtime. The encoded data is specialised to a particular Rust input program (this
-/// is in contrast to rustc's notion of crate metadata which is stored in a generic form, so that
-/// later compilation sessions can perform their own specialisations). By storing specialised MIR,
-/// we avoid the need to carry a whole instance of the compiler with us at runtime to resolve
-/// generic metadata into specialised metadata (Rust's metadata loader API would require us to pass
-/// a `TyCtxt`).
+/// by the Yorick runtime. We refer to the data in the serialisation as "meta-data".
 ///
-/// The encoder and decoder API is structured in such a way that MIRs can be streamed in and out one
-/// at a time. This helps to reduce memory consumption in the compiler, avoiding the need to have
-/// an entire second version of the compiler's metadata in memory at compile-time.
+/// The encoder and decoder API is structured in such a way that meta-data can be streamed to/from
+/// the serialised format one item at a time. This helps to reduce memory consumption.
 ///
-/// The MIR data is serialised to msgpack data in the following form:
+/// The MIR data is serialised in the msgpack format in the following form:
 ///
-///  version            -- The ABI version number of the serialised data.
-///  index:             -- A struct outlining the contents of the serialised data.
-///    num_mirs: usize  -- The number of MIR objects serialised.
-///  mir_0:             \
-///  ...⋮                - MIR entries.
-///  mir_n              /
+///  -----------
+///  version            -- The serialisation format version number.
+///                        This should be bumped every time the meta-data structure changes.
+///  md_0:             \
+///  ...⋮                - Meta-data items.
+///  md_n              /
+///  sentinal           -- End of meta-data marker.
+///  -----------
+///
+///  Where each md_i is an instance of `Some(MetaData)` and the sentinel is a `None`.
+///
+///  The version field is automatically written and check by the `Encoder` and `Decoder`
+///  respectively.
 
 #[macro_use]
 extern crate serde_derive;
@@ -156,7 +157,7 @@ pub enum MetaData {
 
 #[cfg(test)]
 mod tests {
-    use super::{BasicBlock, Decoder, DefId, Encoder, Mir, Statement, Terminator, MetaData};
+    use super::{BasicBlock, Decoder, DefId, Encoder, MetaData, Mir, Statement, Terminator};
     use fallible_iterator::{self, FallibleIterator};
     use std::io::{Cursor, Seek, SeekFrom};
 
@@ -173,7 +174,7 @@ mod tests {
     }
 
     // Makes some sample stuff to round trip test.
-    fn make_sample_metadata() -> Vec<MetaData> {
+    fn get_sample_metadata() -> Vec<MetaData> {
         let dummy_term = Terminator::Abort;
 
         let stmts1_b1 = vec![Statement::Nop; 16];
@@ -213,7 +214,7 @@ mod tests {
     // Check a typical serialising and deserialising session.
     #[test]
     fn test_basic() {
-        let inputs = make_sample_metadata();
+        let inputs = get_sample_metadata();
         let mut curs = get_curs();
 
         let mut enc = Encoder::from(&mut curs).unwrap();
@@ -233,5 +234,18 @@ mod tests {
         while let Some((got, expect)) = itr.next().unwrap() {
             assert_eq!(expect, got);
         }
+    }
+
+    #[test]
+    #[should_panic(expected = "not marked done")]
+    fn test_encode_not_done() {
+        let inputs = get_sample_metadata();
+        let mut curs = get_curs();
+
+        let mut enc = Encoder::from(&mut curs).unwrap();
+        for md in &inputs {
+            enc.serialise(md.clone()).unwrap();
+        }
+        // User forgot: enc.done()
     }
 }
