@@ -40,9 +40,10 @@ pub use encode::Encoder;
 pub type CrateHash = u64;
 pub type DefIndex = u32;
 pub type BasicBlockIndex = u32;
+pub type LocalIndex = u32;
 
 /// A mirror of the compiler's notion of a "definition ID".
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
 pub struct DefId {
     pub crate_hash: CrateHash,
     pub def_idx: DefIndex,
@@ -86,10 +87,66 @@ impl BasicBlock {
 }
 
 /// A MIR statement.
-/// FIXME to be populated.
+/// See the compiler sources for the meanings of these variants.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Statement {
+    Assign(Place, Rvalue),
+    //FakeRead(FakeReadCause, Place),
+    //SetDiscriminant {
+    //    place: Place,
+    //    variant_index: VariantIdx,
+    //},
+    //StorageLive(Local),
+    //StorageDead(Local),
+    //InlineAsm {
+    //    asm: Box<InlineAsm>,
+    //    outputs: Box<[Place]>,
+    //    inputs: Box<[(Span, Operand)]>,
+    //},
+    //Retag(RetagKind, Place),
+    //AscribeUserType(Place, ty::Variance, Box<UserTypeProjection>),
     Nop,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Rvalue {
+    //Use(Operand),
+    //Repeat(Operand, u64),
+    //Ref(Region, BorrowKind, Place),
+    //Len(Place),
+    //Cast(CastKind, Operand, Ty),
+    //BinaryOp(BinOp, Operand, Operand),
+    //CheckedBinaryOp(BinOp, Operand, Operand),
+    //NullaryOp(NullOp, Ty),
+    //UnaryOp(UnOp, Operand),
+    //Discriminant(Place),
+    //Aggregate(Box<AggregateKind>, Vec<Operand>),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Operand {
+    /// Copy: The value must be available for use afterwards.
+    ///
+    /// This implies that the type of the place must be `Copy`; this is true
+    /// by construction during build, but also checked by the MIR type checker.
+    Copy(Place),
+
+    /// Move: The value (including old borrows of it) will not be used again.
+    ///
+    /// Safe for values of all types (modulo future developments towards `?Move`).
+    /// Correct usage patterns are enforced by the borrow checker for safe code.
+    /// `Copy` may be converted to `Move` to enable "last-use" optimizations.
+    Move(Place),
+
+    /// Synthesizes a constant value.
+    Constant(Box<Constant>),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct Constant {
+    //pub ty: Ty,
+    // FIXME ensure this is evaluated
+    //pub literal: &'tcx ty::LazyConst<'tcx>,
 }
 
 /// A call target.
@@ -142,6 +199,19 @@ pub enum Terminator {
     FalseUnwind {
         real_target_bb: BasicBlockIndex,
     },
+}
+
+/// A place is a location for MIR statement operands and return values.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Place {
+    /// A MIR-local variable.
+    Local(LocalIndex),
+    // A static variable.
+    //Static(Box<Static>),
+    // Constant code which has been promoted.
+    //Promoted(Box<(Promoted, Ty<'tcx>)>),
+    // A "projection".
+    //Projection(PlaceProjection),
 }
 
 /// The top-level pack type.
