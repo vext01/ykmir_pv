@@ -41,6 +41,7 @@ pub type CrateHash = u64;
 pub type DefIndex = u32;
 pub type BasicBlockIndex = u32;
 pub type LocalIndex = u32;
+pub type VariantIndex = u32;
 
 /// A mirror of the compiler's notion of a "definition ID".
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
@@ -91,20 +92,16 @@ impl BasicBlock {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Statement {
     Assign(Place, Rvalue),
-    //FakeRead(FakeReadCause, Place),
-    //SetDiscriminant {
-    //    place: Place,
-    //    variant_index: VariantIdx,
-    //},
-    //StorageLive(Local),
-    //StorageDead(Local),
-    //InlineAsm {
-    //    asm: Box<InlineAsm>,
-    //    outputs: Box<[Place]>,
-    //    inputs: Box<[(Span, Operand)]>,
-    //},
-    //Retag(RetagKind, Place),
-    //AscribeUserType(Place, ty::Variance, Box<UserTypeProjection>),
+    FakeRead(Place),
+    SetDiscriminant {
+        place: Place,
+        variant_index: VariantIndex,
+    },
+    StorageLive(LocalIndex),
+    StorageDead(LocalIndex),
+    InlineAsm, // We make no attempt to deal with inline asm for now.
+    Retag(Retag, Place),
+    AscribeUserType, // Not dealing with this for now.
     Nop,
 }
 
@@ -121,6 +118,7 @@ pub enum Rvalue {
     //UnaryOp(UnOp, Operand),
     //Discriminant(Place),
     //Aggregate(Box<AggregateKind>, Vec<Operand>),
+    Dummy
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
@@ -204,15 +202,42 @@ pub enum Terminator {
 /// A place is a location for MIR statement operands and return values.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Place {
-    /// A MIR-local variable.
-    Local(LocalIndex),
+    // A MIR-local variable.
+    //Local(LocalIndex),
     // A static variable.
-    //Static(Box<Static>),
+    //Static(Static),
     // Constant code which has been promoted.
-    //Promoted(Box<(Promoted, Ty<'tcx>)>),
+    //Promoted((Promoted, Ty)),
     // A "projection".
     //Projection(PlaceProjection),
+    Dummy
 }
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct Static {
+    pub def_id: DefId,
+    pub ty: Ty,
+}
+
+// FIXME populate.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct Promoted {}
+
+// FIXME populate.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct Projection {}
+
+// FIXME populate.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct Ty {}
+
+// FIXME populate.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct PlaceProjection {}
+
+// FIXME populate.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct Retag {}
 
 /// The top-level pack type.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
