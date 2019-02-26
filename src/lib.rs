@@ -42,6 +42,25 @@ pub type DefIndex = u32;
 pub type BasicBlockIndex = u32;
 pub type LocalIndex = u32;
 pub type VariantIndex = u32;
+pub type PromotedIndex = u32;
+pub type FieldIndex = u32;
+pub type AdtFlags = u32;
+pub type VariantFlags = u32;
+pub type ReprFlags = u32;
+pub type SymbolIndex = u32;
+pub type TypeFlags = u32;
+pub type DebruijnIndex = u32;
+pub type AllocId = u64;
+pub type Size = u64;
+
+// We used thes "reference indices" to work around the fact that serde can't serialise parts of the
+// MIR which are references. We replace the reference with an index into a separately packed
+// vector.
+pub type RegionRef = u32;
+pub type TyRef = u32;
+pub type AdtDefRef = u32;
+pub type SubstsRef = u32;
+pub type ConstRef = u32;
 
 /// A mirror of the compiler's notion of a "definition ID".
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone, Hash)]
@@ -76,13 +95,13 @@ impl Mir {
 /// A MIR block.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct BasicBlock {
-    pub stmts: Vec<Statement>,
-    pub term: Terminator,
+    pub stmts: Vec<StatementKind>,
+    pub term: TerminatorKind,
 }
 
 impl BasicBlock {
     /// Create a new MIR block.
-    pub fn new(stmts: Vec<Statement>, term: Terminator) -> Self {
+    pub fn new(stmts: Vec<StatementKind>, term: TerminatorKind) -> Self {
         Self { stmts, term }
     }
 }
@@ -90,7 +109,7 @@ impl BasicBlock {
 /// A MIR statement.
 /// See the compiler sources for the meanings of these variants.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-pub enum Statement {
+pub enum StatementKind {
     Assign(Place, Rvalue),
     FakeRead(Place),
     SetDiscriminant {
@@ -100,53 +119,69 @@ pub enum Statement {
     StorageLive(LocalIndex),
     StorageDead(LocalIndex),
     InlineAsm, // We make no attempt to deal with inline asm for now.
-    Retag(Retag, Place),
-    AscribeUserType, // Not dealing with this for now.
+    Retag(RetagKind, Place),
+    AscribeUserType, // FIXME flesh this variant out.
     Nop,
 }
 
+// FIXME implement
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Rvalue {
-    //Use(Operand),
-    //Repeat(Operand, u64),
-    //Ref(Region, BorrowKind, Place),
-    //Len(Place),
-    //Cast(CastKind, Operand, Ty),
-    //BinaryOp(BinOp, Operand, Operand),
-    //CheckedBinaryOp(BinOp, Operand, Operand),
-    //NullaryOp(NullOp, Ty),
-    //UnaryOp(UnOp, Operand),
-    //Discriminant(Place),
-    //Aggregate(Box<AggregateKind>, Vec<Operand>),
     Dummy
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Operand {
-    /// Copy: The value must be available for use afterwards.
-    ///
-    /// This implies that the type of the place must be `Copy`; this is true
-    /// by construction during build, but also checked by the MIR type checker.
     Copy(Place),
-
-    /// Move: The value (including old borrows of it) will not be used again.
-    ///
-    /// Safe for values of all types (modulo future developments towards `?Move`).
-    /// Correct usage patterns are enforced by the borrow checker for safe code.
-    /// `Copy` may be converted to `Move` to enable "last-use" optimizations.
     Move(Place),
-
-    /// Synthesizes a constant value.
-    Constant(Box<Constant>),
+    Constant(Constant),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Constant {
-    //pub ty: Ty,
-    // FIXME ensure this is evaluated
-    //pub literal: &'tcx ty::LazyConst<'tcx>,
+    pub ty: TyRef,
+    pub literal: ConstRef,
 }
 
+/// An evaluated const.
+/// Note that at compile-time there is the notion of unevaluated and evaluated constants. Since
+/// evaluation requires a tcx, we do all evaluation and compile-time, and there is no notion of an
+/// unevaluated constant in ykpack.
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct Const {
+    pub ty: TyRef,
+    pub val: ConstValue,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum ConstValue {
+    Scalar(Scalar),
+    Slice(Scalar, u64),
+    ByRef(AllocId, Allocation, Size),
+}
+
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+// FIXME implement
+pub struct Allocation{}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Scalar<Tag=(), Id=AllocId> {
+    Bits {
+        size: u8,
+        bits: u128,
+    },
+    Ptr(Pointer<Tag, Id>),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct Pointer<Tag=(),Id=AllocId> {
+    pub alloc_id: Id,
+    pub offset: Size,
+    pub tag: Tag,
+}
+
+// FIXME -- revert to mirroring what rustc has here instead of specialising.
 /// A call target.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum CallOperand {
@@ -158,7 +193,7 @@ pub enum CallOperand {
 
 /// A MIR block terminator.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-pub enum Terminator {
+pub enum TerminatorKind {
     Goto {
         target_bb: BasicBlockIndex,
     },
@@ -202,42 +237,172 @@ pub enum Terminator {
 /// A place is a location for MIR statement operands and return values.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Place {
-    // A MIR-local variable.
-    //Local(LocalIndex),
-    // A static variable.
-    //Static(Static),
-    // Constant code which has been promoted.
-    //Promoted((Promoted, Ty)),
-    // A "projection".
-    //Projection(PlaceProjection),
-    Dummy
+    Local(LocalIndex),
+    Static(Static),
+    Promoted((PromotedIndex, TyRef)),
+    Projection(Box<PlaceProjection>),
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct Static {
     pub def_id: DefId,
-    pub ty: Ty,
+    pub ty: TyRef,
 }
 
-// FIXME populate.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-pub struct Promoted {}
+pub struct TyS {
+    pub sty: TyKind,
+    pub flags: TypeFlags,
+    outer_exclusive_binder: DebruijnIndex,
+}
 
-// FIXME populate.
+// FIXME implement
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-pub struct Projection {}
+pub enum TyKind {
+    Dummy,
+}
 
-// FIXME populate.
+// FIXME implement
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-pub struct Ty {}
+pub enum RegionKind {
+    Dummy,
+}
 
-// FIXME populate.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-pub struct PlaceProjection {}
+pub struct TypeAndMut {
+    pub ty: TyRef,
+    pub mutbl: Mutability,
+}
 
-// FIXME populate.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
-pub struct Retag {}
+pub enum Mutability {
+    MutMutable,
+    MutImmutable,
+}
+
+// In the Rust compiler, this is an interned pointer.
+pub type Substs = Vec<(TyRef, RegionRef)>;
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct Projection<B, V, T> {
+    base: B,
+    elem: ProjectionElem<V, T>,
+}
+
+pub type PlaceProjection = Projection<Place, LocalIndex, TyRef>;
+pub type PlaceElem = ProjectionElem<LocalIndex, TyRef>;
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum ProjectionElem<V, T> {
+    Deref,
+    Field(FieldIndex, T),
+    Index(V),
+    ConstantIndex {
+        offset: u32,
+        min_length: u32,
+        from_end: bool,
+    },
+    Subslice {
+        from: u32,
+        to: u32,
+    },
+    Downcast(AdtDefRef, VariantIndex),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct AdtDef {
+    pub did: DefId,
+    pub variants: Vec<VariantDef>,
+    flags: AdtFlags,
+    pub repr: ReprOptions,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct ReprOptions {
+    pub int: Option<IntType>,
+    pub align: u32,
+    pub pack: u32,
+    pub flags: ReprFlags,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum IntType {
+    SignedInt(IntTy),
+    UnsignedInt(UintTy)
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum UintTy {
+    Usize,
+    U8,
+    U16,
+    U32,
+    U64,
+    U128,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum IntTy {
+    Isize,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum FloatTy {
+    F32,
+    F64,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct VariantDef {
+    /// The variant's `DefId`. If this is a tuple-like struct,
+    /// this is the `DefId` of the struct's ctor.
+    pub did: DefId,
+    pub ident: SymbolIndex, // struct's name if this is a struct
+    pub discr: VariantDiscr,
+    pub fields: Vec<FieldDef>,
+    pub ctor_kind: CtorKind,
+    flags: VariantFlags,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum CtorKind {
+    Fn,
+    Const,
+    Fictive,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub struct FieldDef {
+    pub did: DefId,
+    pub ident: SymbolIndex,
+    pub vis: Visibility,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum Visibility {
+    Public,
+    Restricted(DefId),
+    Invisible,
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum VariantDiscr {
+    Explicit(DefId),
+    Relative(u32),
+}
+
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+pub enum RetagKind {
+    FnEntry,
+    TwoPhase,
+    Raw,
+    Default,
+}
 
 /// The top-level pack type.
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
@@ -247,7 +412,7 @@ pub enum Pack {
 
 #[cfg(test)]
 mod tests {
-    use super::{BasicBlock, Decoder, DefId, Encoder, Mir, Pack, Statement, Terminator};
+    use super::{BasicBlock, Decoder, DefId, Encoder, Mir, Pack, StatementKind, TerminatorKind};
     use fallible_iterator::{self, FallibleIterator};
     use std::io::{Cursor, Seek, SeekFrom};
 
@@ -265,19 +430,19 @@ mod tests {
 
     // Makes some sample stuff to round trip test.
     fn get_sample_packs() -> Vec<Pack> {
-        let dummy_term = Terminator::Abort;
+        let dummy_term = TerminatorKind::Abort;
 
-        let stmts1_b1 = vec![Statement::Nop; 16];
-        let stmts1_b2 = vec![Statement::Nop; 3];
+        let stmts1_b1 = vec![StatementKind::Nop; 16];
+        let stmts1_b2 = vec![StatementKind::Nop; 3];
         let blocks1 = vec![
             BasicBlock::new(stmts1_b1, dummy_term.clone()),
             BasicBlock::new(stmts1_b2, dummy_term.clone()),
         ];
         let mir1 = Pack::Mir(Mir::new(DefId::new(1, 2), blocks1));
 
-        let stmts2_b1 = vec![Statement::Nop; 7];
-        let stmts2_b2 = vec![Statement::Nop; 200];
-        let stmts2_b3 = vec![Statement::Nop; 1];
+        let stmts2_b1 = vec![StatementKind::Nop; 7];
+        let stmts2_b2 = vec![StatementKind::Nop; 200];
+        let stmts2_b3 = vec![StatementKind::Nop; 1];
         let blocks2 = vec![
             BasicBlock::new(stmts2_b1, dummy_term.clone()),
             BasicBlock::new(stmts2_b2, dummy_term.clone()),
