@@ -110,6 +110,13 @@ impl Statement {
         }
     }
 
+    pub fn defs_vars_mut(&mut self) -> Vec<&mut LocalIndex> {
+        match self {
+            Statement::Nop | Statement::Unimplemented => vec![],
+            Statement::Assign(p, _) => p.defs_vars_mut(),
+        }
+    }
+
     pub fn defs_vars(&self) -> Vec<LocalIndex> {
         match self {
             Statement::Nop | Statement::Unimplemented => vec![],
@@ -123,6 +130,15 @@ impl Statement {
         }
         false
     }
+
+    pub fn rhs_phi_var_mut(&mut self, j: usize) -> Option<&mut LocalIndex> {
+        if let Statement::Assign(_, Rvalue::Phi(ps)) = self {
+            if let Place::Local(ref mut l) = ps[j] {
+                return Some(l);
+            }
+        }
+        None
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
@@ -133,6 +149,13 @@ pub enum Place {
 
 impl Place {
     fn uses_vars_mut(&mut self) -> Vec<&mut LocalIndex> {
+        match self {
+            Place::Local(l) => vec![l],
+            Place::Unimplemented => vec![],
+        }
+    }
+
+    fn defs_vars_mut(&mut self) -> Vec<&mut LocalIndex> {
         match self {
             Place::Local(l) => vec![l],
             Place::Unimplemented => vec![],
@@ -247,9 +270,9 @@ mod tests {
     }
 
     #[test]
-    fn assign_defs_vars() {
-        let s = Statement::Assign(Place::Local(42), Rvalue::Place(Place::Local(43)));
-        assert_eq!(s.defs_vars(), vec![42]);
+    fn assign_defs_vars_mut() {
+        let mut s = Statement::Assign(Place::Local(42), Rvalue::Place(Place::Local(43)));
+        assert_eq!(s.defs_vars_mut(), vec![&mut 42]);
     }
 
     #[test]
@@ -260,9 +283,9 @@ mod tests {
     }
 
     #[test]
-    fn phi_defs_vars() {
-        let s = Statement::Assign(Place::Local(44),
+    fn phi_defs_vars_mut() {
+        let mut s = Statement::Assign(Place::Local(44),
             Rvalue::Phi(vec![Place::Local(100), Place::Local(200)]));
-        assert_eq!(s.defs_vars(), vec![44]);
+        assert_eq!(s.defs_vars_mut(), vec![&mut 44]);
     }
 }
