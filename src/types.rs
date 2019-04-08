@@ -103,10 +103,10 @@ impl Display for Statement {
 }
 
 impl Statement {
-    pub fn uses_vars(&self) -> Vec<LocalIndex> {
+    pub fn uses_vars_mut(&mut self) -> Vec<&mut LocalIndex> {
         match self {
             Statement::Nop | Statement::Unimplemented => vec![],
-            Statement::Assign(_, rv) => rv.uses_vars(),
+            Statement::Assign(_, rv) => rv.uses_vars_mut(),
         }
     }
 
@@ -132,9 +132,9 @@ pub enum Place {
 }
 
 impl Place {
-    fn uses_vars(&self) -> Vec<LocalIndex> {
+    fn uses_vars_mut(&mut self) -> Vec<&mut LocalIndex> {
         match self {
-            Place::Local(l) => vec![*l],
+            Place::Local(l) => vec![l],
             Place::Unimplemented => vec![],
         }
     }
@@ -155,13 +155,13 @@ pub enum Rvalue {
 }
 
 impl Rvalue {
-    fn uses_vars(&self) -> Vec<LocalIndex> {
+    fn uses_vars_mut(&mut self) -> Vec<&mut LocalIndex> {
         match self {
-            Rvalue::Place(p) => p.uses_vars(),
+            Rvalue::Place(p) => p.uses_vars_mut(),
             Rvalue::Phi(ps) => {
                 let mut res = Vec::new();
-                ps.iter().fold(&mut res, |r, p| {
-                    r.extend(p.uses_vars());
+                ps.iter_mut().fold(&mut res, |r, p| {
+                    r.extend(p.uses_vars_mut());
                     r
                 });
                 res
@@ -241,9 +241,9 @@ mod tests {
     use super::{Statement, Place, Rvalue};
 
     #[test]
-    fn assign_uses_vars() {
-        let s = Statement::Assign(Place::Local(42), Rvalue::Place(Place::Local(43)));
-        assert_eq!(s.uses_vars(), vec![43]);
+    fn assign_uses_vars_mut() {
+        let mut s = Statement::Assign(Place::Local(42), Rvalue::Place(Place::Local(43)));
+        assert_eq!(s.uses_vars_mut(), vec![&mut 43]);
     }
 
     #[test]
@@ -253,10 +253,10 @@ mod tests {
     }
 
     #[test]
-    fn phi_uses_vars() {
-        let s = Statement::Assign(Place::Local(44),
+    fn phi_uses_vars_mut() {
+        let mut s = Statement::Assign(Place::Local(44),
             Rvalue::Phi(vec![Place::Local(100), Place::Local(200)]));
-        assert_eq!(s.uses_vars(), vec![100, 200]);
+        assert_eq!(s.uses_vars_mut(), vec![&mut 100, &mut 200]);
     }
 
     #[test]
