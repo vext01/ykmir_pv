@@ -102,10 +102,49 @@ impl Display for Statement {
     }
 }
 
+impl Statement {
+    pub fn uses_vars(&self) -> Vec<LocalIndex> {
+        match self {
+            Statement::Nop | Statement::Unimplemented => vec![],
+            Statement::Assign(_, rv) => rv.uses_vars(),
+        }
+    }
+
+    pub fn defs_vars(&self) -> Vec<LocalIndex> {
+        match self {
+            Statement::Nop | Statement::Unimplemented => vec![],
+            Statement::Assign(p, _) => p.defs_vars(),
+        }
+    }
+
+    pub fn is_phi(&self) -> bool {
+        if let Statement::Assign(_, Rvalue::Phi(..)) = self {
+            return true;
+        }
+        false
+    }
+}
+
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Place {
     Local(LocalIndex),
     Unimplemented, // FIXME
+}
+
+impl Place {
+    fn uses_vars(&self) -> Vec<LocalIndex> {
+        match self {
+            Place::Local(l) => vec![*l],
+            Place::Unimplemented => vec![],
+        }
+    }
+
+    fn defs_vars(&self) -> Vec<LocalIndex> {
+        match self {
+            Place::Local(l) => vec![*l],
+            Place::Unimplemented => vec![],
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
@@ -113,6 +152,23 @@ pub enum Rvalue {
     Place(Place),
     Phi(Vec<Place>),
     Unimplemented, // FIXME
+}
+
+impl Rvalue {
+    fn uses_vars(&self) -> Vec<LocalIndex> {
+        match self {
+            Rvalue::Place(p) => p.uses_vars(),
+            Rvalue::Phi(ps) => {
+                let mut res = Vec::new();
+                ps.iter().fold(&mut res, |r, p| {
+                    r.extend(p.uses_vars());
+                    r
+                });
+                res
+            },
+            Rvalue::Unimplemented => vec![],
+        }
+    }
 }
 
 /// A call target.
@@ -177,5 +233,36 @@ impl Display for Pack {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let Pack::Mir(mir) = self;
         write!(f, "{}", mir)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Statement, Place, Rvalue};
+
+    #[test]
+    fn assign_uses_vars() {
+        let s = Statement::Assign(Place::Local(42), Rvalue::Place(Place::Local(43)));
+        assert_eq!(s.uses_vars(), vec![43]);
+    }
+
+    #[test]
+    fn assign_defs_vars() {
+        let s = Statement::Assign(Place::Local(42), Rvalue::Place(Place::Local(43)));
+        assert_eq!(s.defs_vars(), vec![42]);
+    }
+
+    #[test]
+    fn phi_uses_vars() {
+        let s = Statement::Assign(Place::Local(44),
+            Rvalue::Phi(vec![Place::Local(100), Place::Local(200)]));
+        assert_eq!(s.uses_vars(), vec![100, 200]);
+    }
+
+    #[test]
+    fn phi_defs_vars() {
+        let s = Statement::Assign(Place::Local(44),
+            Rvalue::Phi(vec![Place::Local(100), Place::Local(200)]));
+        assert_eq!(s.defs_vars(), vec![44]);
     }
 }
