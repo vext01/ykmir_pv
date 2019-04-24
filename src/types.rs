@@ -92,7 +92,8 @@ impl Display for BasicBlock {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Statement {
     Nop,
-    DefArgs(Vec<LocalIndex>),
+    /// This is a special instruction used only in SSA generation.
+    SsaEntryDefs(Vec<LocalIndex>),
     Assign(Place, Rvalue),
     Unimplemented, // FIXME
 }
@@ -106,7 +107,7 @@ impl Display for Statement {
 impl Statement {
     pub fn uses_vars_mut(&mut self) -> Vec<&mut LocalIndex> {
         match self {
-            Statement::Nop | Statement::Unimplemented | Statement::DefArgs(_) => vec![],
+            Statement::Nop | Statement::Unimplemented | Statement::SsaEntryDefs(_) => vec![],
             Statement::Assign(_, rv) => rv.uses_vars_mut(),
         }
     }
@@ -115,7 +116,7 @@ impl Statement {
         match self {
             Statement::Nop | Statement::Unimplemented => vec![],
             Statement::Assign(p, _) => p.defs_vars_mut(),
-            Statement::DefArgs(ref mut vs) => vs.iter_mut().collect(),
+            Statement::SsaEntryDefs(ref mut vs) => vs.iter_mut().collect(),
         }
     }
 
@@ -123,7 +124,7 @@ impl Statement {
         match self {
             Statement::Nop | Statement::Unimplemented => vec![],
             Statement::Assign(p, _) => p.defs_vars(),
-            Statement::DefArgs(vs) => vs.clone(),
+            Statement::SsaEntryDefs(vs) => vs.clone(),
         }
     }
 
@@ -135,7 +136,6 @@ impl Statement {
     }
 
     pub fn phi_arg_mut(&mut self, j: usize) -> Option<&mut LocalIndex> {
-        // Refactor FIXME
         if let Statement::Assign(_, Rvalue::Phi(ps)) = self {
             if let Place::Local(ref mut l) = ps[j] {
                 return Some(l);
@@ -192,7 +192,7 @@ impl Rvalue {
                     r
                 });
                 res
-            },
+            }
             Rvalue::Unimplemented => vec![],
         }
     }
@@ -252,14 +252,20 @@ impl Display for Terminator {
 
 impl Terminator {
     pub fn uses_vars_mut(&mut self) -> Vec<&mut LocalIndex> {
-       match self {
-            Terminator::GeneratorDrop | Terminator::DropAndReplace{..} | Terminator::Drop{ .. } | Terminator::Unreachable | Terminator::Goto { .. } | Terminator::Resume | Terminator::Abort => Vec::new(),
+        match self {
+            Terminator::GeneratorDrop
+            | Terminator::DropAndReplace { .. }
+            | Terminator::Drop { .. }
+            | Terminator::Unreachable
+            | Terminator::Goto { .. }
+            | Terminator::Resume
+            | Terminator::Abort => Vec::new(),
             Terminator::SwitchInt { .. } => Vec::new(), // FIXME has a condition which will use.
             Terminator::Return(ref mut v) => vec![v],
-            Terminator::Call{..} => Vec::new(), // FIXME, may use a local variable.
-            Terminator::Assert{..} => Vec::new(), // FIXME has a condition var.
-            Terminator::Yield{..} => Vec::new(), // FIXME check semantics of this terminator.
-       }
+            Terminator::Call { .. } => Vec::new(), // FIXME, may use a local variable.
+            Terminator::Assert { .. } => Vec::new(), // FIXME has a condition var.
+            Terminator::Yield { .. } => Vec::new(), // FIXME check semantics of this terminator.
+        }
     }
 }
 
@@ -278,7 +284,7 @@ impl Display for Pack {
 
 #[cfg(test)]
 mod tests {
-    use super::{Statement, Place, Rvalue};
+    use super::{Place, Rvalue, Statement};
 
     #[test]
     fn assign_uses_vars_mut() {
@@ -294,15 +300,19 @@ mod tests {
 
     #[test]
     fn phi_uses_vars_mut() {
-        let mut s = Statement::Assign(Place::Local(44),
-            Rvalue::Phi(vec![Place::Local(100), Place::Local(200)]));
+        let mut s = Statement::Assign(
+            Place::Local(44),
+            Rvalue::Phi(vec![Place::Local(100), Place::Local(200)]),
+        );
         assert_eq!(s.uses_vars_mut(), vec![&mut 100, &mut 200]);
     }
 
     #[test]
     fn phi_defs_vars_mut() {
-        let mut s = Statement::Assign(Place::Local(44),
-            Rvalue::Phi(vec![Place::Local(100), Place::Local(200)]));
+        let mut s = Statement::Assign(
+            Place::Local(44),
+            Rvalue::Phi(vec![Place::Local(100), Place::Local(200)]),
+        );
         assert_eq!(s.defs_vars_mut(), vec![&mut 44]);
     }
 }
