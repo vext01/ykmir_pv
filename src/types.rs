@@ -92,6 +92,7 @@ impl Display for BasicBlock {
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub enum Statement {
     Nop,
+    DefArgs(Vec<LocalIndex>),
     Assign(Place, Rvalue),
     Unimplemented, // FIXME
 }
@@ -105,7 +106,7 @@ impl Display for Statement {
 impl Statement {
     pub fn uses_vars_mut(&mut self) -> Vec<&mut LocalIndex> {
         match self {
-            Statement::Nop | Statement::Unimplemented => vec![],
+            Statement::Nop | Statement::Unimplemented | Statement::DefArgs(_) => vec![],
             Statement::Assign(_, rv) => rv.uses_vars_mut(),
         }
     }
@@ -114,6 +115,7 @@ impl Statement {
         match self {
             Statement::Nop | Statement::Unimplemented => vec![],
             Statement::Assign(p, _) => p.defs_vars_mut(),
+            Statement::DefArgs(ref mut vs) => vs.iter_mut().collect(),
         }
     }
 
@@ -121,6 +123,7 @@ impl Statement {
         match self {
             Statement::Nop | Statement::Unimplemented => vec![],
             Statement::Assign(p, _) => p.defs_vars(),
+            Statement::DefArgs(vs) => vs.clone(),
         }
     }
 
@@ -131,7 +134,8 @@ impl Statement {
         false
     }
 
-    pub fn rhs_phi_var_mut(&mut self, j: usize) -> Option<&mut LocalIndex> {
+    pub fn phi_arg_mut(&mut self, j: usize) -> Option<&mut LocalIndex> {
+        // Refactor FIXME
         if let Statement::Assign(_, Rvalue::Phi(ps)) = self {
             if let Place::Local(ref mut l) = ps[j] {
                 return Some(l);
@@ -214,7 +218,7 @@ pub enum Terminator {
     },
     Resume,
     Abort,
-    Return,
+    Return(LocalIndex), // Because TIR is in SSA, we have to say which SSA variable to return.
     Unreachable,
     Drop {
         target_bb: BasicBlockIndex,
@@ -243,6 +247,19 @@ pub enum Terminator {
 impl Display for Terminator {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{:?}", self)
+    }
+}
+
+impl Terminator {
+    pub fn uses_vars_mut(&mut self) -> Vec<&mut LocalIndex> {
+       match self {
+            Terminator::GeneratorDrop | Terminator::DropAndReplace{..} | Terminator::Drop{ .. } | Terminator::Unreachable | Terminator::Goto { .. } | Terminator::Resume | Terminator::Abort => Vec::new(),
+            Terminator::SwitchInt { .. } => Vec::new(), // FIXME has a condition which will use.
+            Terminator::Return(ref mut v) => vec![v],
+            Terminator::Call{..} => Vec::new(), // FIXME, may use a local variable.
+            Terminator::Assert{..} => Vec::new(), // FIXME has a condition var.
+            Terminator::Yield{..} => Vec::new(), // FIXME check semantics of this terminator.
+       }
     }
 }
 
